@@ -2,7 +2,7 @@
 using System.Data;
 using System.Windows;
 
-namespace WpfTestDemo
+namespace WpfCursor
 {
     /// <summary>
     /// Interaction logic for App.xaml

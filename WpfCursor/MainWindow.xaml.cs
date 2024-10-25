@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 
-namespace WpfTestDemo
+namespace WpfCursor
 {
     public partial class MainWindow : Window
     {
@@ -13,7 +13,8 @@ namespace WpfTestDemo
         public MainWindow()
         {
             InitializeComponent();
-            HotkeyManager.Current.AddOrReplace("1", Key.Z, ModifierKeys.Shift | ModifierKeys.Alt, (_, _) => StartButton_Click(this, new RoutedEventArgs()));
+            HotkeyManager.Current.AddOrReplace("start", Key.Z, ModifierKeys.Shift | ModifierKeys.Alt, (_, _) => StartButton_Click(this, new RoutedEventArgs()));
+            HotkeyManager.Current.AddOrReplace("stop", Key.X, ModifierKeys.Shift | ModifierKeys.Alt, (_, _) => StopButton_Click(this, new RoutedEventArgs()));
 
             _cursorManager = new CursorManager();
         }
@@ -82,12 +83,12 @@ namespace WpfTestDemo
 
         public void Arrow()
         {
-            var cusor = CopyIcon(LoadCursorFromFile(@"C:\Windows\Cursors\arrow_m.cur"));
+            var cusor = CopyIcon(LoadCursorFromFile(@"C:\Windows\Cursors\aero_arrow.cur"));
             SetSystemCursor(cusor, OCR_NORMAL);
         }
         public void Busy()
         {
-            var cusor = CopyIcon(LoadCursorFromFile(@"C:\Windows\Cursors\busy_m.cur"));
+            var cusor = CopyIcon(LoadCursorFromFile(@"C:\Windows\Cursors\aero_busy.ani"));
             SetSystemCursor(cusor, OCR_NORMAL);
         }
 
