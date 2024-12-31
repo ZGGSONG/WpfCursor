@@ -14,7 +14,11 @@
 	</PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Working_128x.ani" />
     <None Remove="Working_32x.ani" />
+    <None Remove="Working_48x.ani" />
+    <None Remove="Working_64x.ani" />
+    <None Remove="Working_96x.ani" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,7 +27,19 @@
   </ItemGroup>
 
   <ItemGroup>
+	  <Resource Include="Working_128x.ani">
+	    <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+	  </Resource>
 	  <Resource Include="Working_32x.ani">
+	    <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+	  </Resource>
+	  <Resource Include="Working_48x.ani">
+	    <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+	  </Resource>
+	  <Resource Include="Working_64x.ani">
+	    <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+	  </Resource>
+	  <Resource Include="Working_96x.ani">
 	    <CopyToOutputDirectory>Never</CopyToOutputDirectory>
 	  </Resource>
   </ItemGroup>

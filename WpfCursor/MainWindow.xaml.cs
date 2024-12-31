@@ -15,12 +15,17 @@ namespace WpfCursor
 
         private void StartButton_Click(object sender, RoutedEventArgs e)
         {
-            CursorManager.Execute();
+            CursorManager.Instance.Execute();
         }
 
         private void StopButton_Click(object sender, RoutedEventArgs e)
         {
-            CursorManager.Restore();
+            CursorManager.Instance.Restore();
+        }
+
+        private void ErrorButton_Click(object sender, RoutedEventArgs e)
+        {
+            CursorManager.Instance.Error();
         }
     }
 }

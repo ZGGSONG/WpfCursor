@@ -27,5 +27,13 @@
             Click="StopButton_Click"
             Content="Stop"
             FontSize="30" />
+        <Button
+            Margin="20"
+            Padding="20,10"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Click="ErrorButton_Click"
+            Content="Error"
+            FontSize="30" />
     </StackPanel>
 </Window>
