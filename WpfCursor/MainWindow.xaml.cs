@@ -22,15 +22,5 @@ namespace WpfCursor
         {
             CursorManager.Restore();
         }
-
-        private void ArrowButton_Click(object sender, RoutedEventArgs e)
-        {
-            CursorManager.Arrow();
-        }
-
-        private void BusyButton_Click(object sender, RoutedEventArgs e)
-        {
-            CursorManager.Busy();
-        }
     }
 }
