@@ -8,211 +8,119 @@ namespace WpfCursor;
 /// <summary>
 ///     光标管理类，用于设置和恢复系统光标
 /// </summary>
-public class CursorManager : IDisposable
+public sealed class CursorManager : IDisposable
 {
+    #region Constants
     private const int OCR_NORMAL = 32512;
     private const int OCR_IBEAM = 32513;
     private const uint IMAGE_CURSOR = 2;
     private const uint LR_LOADFROMFILE = 0x00000010;
     private const uint LR_DEFAULTSIZE = 0x00000040;
     private const uint LR_SHARED = 0x00008000;
-
-    private static bool _isExecuting;
-    private static IntPtr _originalNormalCursor;
-    private static IntPtr _originalBeamCursor;
-    private static IntPtr _customNormalCursor;
-    private static IntPtr _customBeamCursor;
-    private static IntPtr _errorNormalCursor;
-    private static IntPtr _errorBeamCursor;
-
-    /// <summary>
-    ///     <see href="https://learn.microsoft.com/zh-cn/windows/win32/api/winuser/nf-winuser-loadcursora"/>
-    ///     * 此函数已被 LoadImage 函数取代（设置了 LR_DEFAULTSIZE 和 LR_SHARED 标志）。
-    /// </summary>
-    /// <param name="hInstance"></param>
-    /// <param name="lpCursorName"></param>
-    /// <returns></returns>
-    [DllImport("user32.dll")]
-    private static extern IntPtr LoadCursor(IntPtr hInstance, int lpCursorName);
-
-    /// <summary>
-    ///     <see href="https://learn.microsoft.com/zh-cn/windows/win32/api/winuser/nf-winuser-loadimagea"/>
-    /// </summary>
-    /// <param name="hInst"></param>
-    /// <param name="lpszName"></param>
-    /// <param name="uType"></param>
-    /// <param name="cxDesired"></param>
-    /// <param name="cyDesired"></param>
-    /// <param name="fuLoad"></param>
-    /// <returns></returns>
-    [DllImport("user32.dll")]
-    private static extern IntPtr LoadImage(IntPtr hInst, IntPtr lpszName, uint uType, int cxDesired, int cyDesired, uint fuLoad);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern IntPtr LoadCursorFromFile(string fileName);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern bool SetSystemCursor(IntPtr hCursor, uint id);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern IntPtr CopyIcon(IntPtr hIcon);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern bool DestroyCursor(IntPtr hCursor);
-
-    // 定义 MAKEINTRESOURCE 宏的等效功能
-    public static IntPtr MAKEINTRESOURCE(int value)
-    {
-        return new IntPtr(value);
-    }
-
-    /// <summary>
-    ///     <see href="https://learn.microsoft.com/zh-cn/windows/win32/api/winuser/nf-winuser-systemparametersinfoa"/>
-    /// </summary>
-    /// <param name="uiAction"></param>
-    /// <param name="uiParam"></param>
-    /// <param name="pvParam"></param>
-    /// <param name="fWinIni"></param>
-    /// <returns></returns>
-    [DllImport("user32.dll")]
-    private static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
-
     /// <summary>
     ///     重置系统光标。将ulParam参数设为0并且pvParam参数设为NULL。
     /// </summary>
     private const uint SPI_SETCURSORS = 0x0057;
     private const uint SPIF_UPDATEINIFILE = 0x01;
     private const uint SPIF_SENDCHANGE = 0x02;
-
-    private static readonly object _lock = new();
-    private bool _disposed;
-
-    // 添加 DPI 相关常量
     private const uint SPI_GETDPISCALINGSIZE = 0x2014;
     private const uint PROCESS_DPI_AWARENESS = 2;
+    #endregion
+
+    #region Fields
+    private static readonly object _lock = new();
+    private static volatile bool _isExecuting;
+    private bool _disposed;
+
+    private IntPtr _originalNormalCursor;
+    private IntPtr _originalBeamCursor;
+    private IntPtr _customNormalCursor;
+    private IntPtr _customBeamCursor;
+    private IntPtr _errorNormalCursor;
+    private IntPtr _errorBeamCursor;
+
+    private static readonly string[] ErrorCursorPaths =
+    [
+        @"C:\Windows\Cursors\aero_unavail.cur",
+        @"C:\Windows\Cursors\aero_unavail_l.cur",
+        @"C:\Windows\Cursors\aero_unavail_xl.cur"
+    ];
+    #endregion
+
+    #region Native Methods
+    [DllImport("user32.dll")]
+    private static extern IntPtr LoadImage(IntPtr hInst, IntPtr lpszName, uint uType,
+        int cxDesired, int cyDesired, uint fuLoad);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr LoadCursorFromFile(string fileName);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetSystemCursor(IntPtr hCursor, uint id);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CopyIcon(IntPtr hIcon);
+
+    [DllImport("user32.dll")]
+    private static extern bool DestroyCursor(IntPtr hCursor);
+
+    [DllImport("user32.dll")]
+    private static extern bool SystemParametersInfo(uint uiAction, uint uiParam, IntPtr pvParam, uint fWinIni);
 
     [DllImport("shcore.dll")]
     private static extern int SetProcessDpiAwareness(uint value);
+    #endregion
+
+    #region Singleton Implementation
+    public static CursorManager Instance { get; } = new();
 
     private CursorManager()
     {
-        // 确保 DPI 感知
         SetProcessDpiAwareness(PROCESS_DPI_AWARENESS);
     }
-    public static CursorManager Instance { get; } = new();
+    #endregion
 
-    /// <summary>
-    ///     获取鼠标指针大小
-    /// </summary>
-    private static int GetCursorSize()
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(@"Control Panel\Cursors");
-        var cursorBaseSize = key?.GetValue("CursorBaseSize");
-        return cursorBaseSize is int intVal ? intVal : 32;
-    }
-
+    #region Public Methods
     /// <summary>
     ///     执行光标替换操作
     /// </summary>
+    /// <exception cref="InvalidOperationException">光标操作失败时抛出</exception>
     public void Execute()
     {
         lock (_lock)
         {
             if (_isExecuting) return;
-            _isExecuting = true;
 
             try
             {
+                _isExecuting = true;
                 SaveOriginalCursors();
                 LoadAndSetCustomCursors();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 Restore();
-                throw;
+                throw new InvalidOperationException("Failed to execute cursor replacement", ex);
             }
         }
     }
 
-    private void SaveOriginalCursors()
+    /// <summary>
+    ///     设置错误状态光标
+    /// </summary>
+    /// <exception cref="InvalidOperationException">设置错误光标失败时抛出</exception>
+    public void Error()
     {
-        var normalCursor = LoadImage(IntPtr.Zero, MAKEINTRESOURCE(OCR_NORMAL), IMAGE_CURSOR, 0, 0, LR_SHARED);
-        var beamCursor = LoadImage(IntPtr.Zero, MAKEINTRESOURCE(OCR_IBEAM), IMAGE_CURSOR, 0, 0, LR_SHARED);
-
-        if (normalCursor == IntPtr.Zero || beamCursor == IntPtr.Zero)
-            throw new InvalidOperationException("Failed to load original cursors");
-
-        _originalNormalCursor = CopyIcon(normalCursor);
-        _originalBeamCursor = CopyIcon(beamCursor);
-
-        if (_originalNormalCursor == IntPtr.Zero || _originalBeamCursor == IntPtr.Zero)
-            throw new InvalidOperationException("Failed to save original cursors");
-    }
-
-    private void LoadAndSetCustomCursors()
-    {
-        var cursorSize = GetCursorSize();
-        var tempFilePath = Path.GetTempFileName();
-
         try
         {
-            ExtractCursorResource(tempFilePath);
-            SetCustomCursors(tempFilePath, cursorSize);
+            var cursorPath = GetErrorCursorPath();
+            SetErrorCursors(cursorPath);
         }
-        finally
+        catch (Exception ex)
         {
-            if (File.Exists(tempFilePath))
-                File.Delete(tempFilePath);
+            Restore();
+            throw new InvalidOperationException("Failed to set error cursors", ex);
         }
-    }
-
-    private static void ExtractCursorResource(string tempFilePath)
-    {
-        var cursorPath = $"Working_{GetCursorSize() switch
-        {
-            128 => "128",
-            96 => "96",
-            64 => "64",
-            48 => "48",
-            _ => "32",
-        }}x.ani";
-        using var resourceStream = Application.GetResourceStream(new Uri(cursorPath, UriKind.Relative))?.Stream
-            ?? throw new InvalidOperationException($"Could not load cursor resource: {cursorPath}");
-
-        using var fileStream = File.Create(tempFilePath);
-        resourceStream.CopyTo(fileStream, 81920); // 使用80KB缓冲区
-    }
-
-    private void SetCustomCursors(string cursorPath, int size)
-    {
-        // 确保使用正确的字符串转换方式
-        _customNormalCursor = LoadCursorFromFile(cursorPath);
-        if (_customNormalCursor == IntPtr.Zero)
-            throw new InvalidOperationException($"Failed to load custom normal cursor: {Marshal.GetLastWin32Error()}");
-
-        _customBeamCursor = LoadCursorFromFile(cursorPath);
-        if (_customBeamCursor == IntPtr.Zero)
-            throw new InvalidOperationException($"Failed to load custom beam cursor: {Marshal.GetLastWin32Error()}");
-
-        if (!SetSystemCursor(_customNormalCursor, OCR_NORMAL))
-            throw new InvalidOperationException($"Failed to set normal cursor: {Marshal.GetLastWin32Error()}");
-
-        if (!SetSystemCursor(_customBeamCursor, OCR_IBEAM))
-            throw new InvalidOperationException($"Failed to set beam cursor: {Marshal.GetLastWin32Error()}");
-    }
-
-    public void Dispose()
-    {
-        if (_disposed) return;
-
-        Restore();
-        _disposed = true;
-        GC.SuppressFinalize(this);
-    }
-
-    ~CursorManager()
-    {
-        Dispose();
     }
 
     /// <summary>
@@ -224,49 +132,9 @@ public class CursorManager : IDisposable
 
         try
         {
-            // 恢复原始光标
-            if (_originalNormalCursor != IntPtr.Zero)
-            {
-                SetSystemCursor(_originalNormalCursor, OCR_NORMAL);
-                DestroyCursor(_originalNormalCursor);
-                _originalNormalCursor = IntPtr.Zero;
-            }
-
-            if (_originalBeamCursor != IntPtr.Zero)
-            {
-                SetSystemCursor(_originalBeamCursor, OCR_IBEAM);
-                DestroyCursor(_originalBeamCursor);
-                _originalBeamCursor = IntPtr.Zero;
-            }
-
-            // 通知系统更新所有光标
-            SystemParametersInfo(SPI_SETCURSORS, 0, IntPtr.Zero, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
-
-            // 清理自定义光标
-            if (_customNormalCursor != IntPtr.Zero)
-            {
-                DestroyCursor(_customNormalCursor);
-                _customNormalCursor = IntPtr.Zero;
-            }
-
-            if (_customBeamCursor != IntPtr.Zero)
-            {
-                DestroyCursor(_customBeamCursor);
-                _customBeamCursor = IntPtr.Zero;
-            }
-
-            // 清理错误光标
-            if (_errorNormalCursor != IntPtr.Zero)
-            {
-                DestroyCursor(_errorNormalCursor);
-                _errorNormalCursor = IntPtr.Zero;
-            }
-
-            if (_errorBeamCursor != IntPtr.Zero)
-            {
-                DestroyCursor(_errorBeamCursor);
-                _errorBeamCursor = IntPtr.Zero;
-            }
+            RestoreOriginalCursors();
+            CleanupCustomCursors();
+            UpdateSystemCursors();
         }
         finally
         {
@@ -274,41 +142,153 @@ public class CursorManager : IDisposable
         }
     }
 
-    /// <summary>
-    ///     设置错误光标
-    /// </summary>
-    public void Error()
+    public void Dispose()
     {
+        if (_disposed) return;
+
+        Restore();
+        _disposed = true;
+        GC.SuppressFinalize(this);
+    }
+    #endregion
+
+    #region Private Methods
+    private static int GetCursorSize()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(@"Control Panel\Cursors");
+        return key?.GetValue("CursorBaseSize") is int size ? size : 32;
+    }
+
+    private void SaveOriginalCursors()
+    {
+        var normalCursor = LoadImage(IntPtr.Zero, new IntPtr(OCR_NORMAL), IMAGE_CURSOR, 0, 0, LR_SHARED);
+        var beamCursor = LoadImage(IntPtr.Zero, new IntPtr(OCR_IBEAM), IMAGE_CURSOR, 0, 0, LR_SHARED);
+
+        ThrowIfInvalidPointer(normalCursor, "Failed to load original normal cursor");
+        ThrowIfInvalidPointer(beamCursor, "Failed to load original beam cursor");
+
+        _originalNormalCursor = CopyIcon(normalCursor);
+        _originalBeamCursor = CopyIcon(beamCursor);
+
+        ThrowIfInvalidPointer(_originalNormalCursor, "Failed to copy original normal cursor");
+        ThrowIfInvalidPointer(_originalBeamCursor, "Failed to copy original beam cursor");
+    }
+
+    private void LoadAndSetCustomCursors()
+    {
+        var tempFilePath = Path.GetTempFileName();
         try
         {
-            const string errorCursorPath = @"C:\Windows\Cursors\aero_unavail.cur";
-            const string errorLCursorPath = @"C:\Windows\Cursors\aero_unavail_l.cur";
-            const string errorXlCursorPath = @"C:\Windows\Cursors\aero_unavail_xl.cur";
-            var path = GetCursorSize() switch
-            {
-                32 => errorCursorPath,
-                48 => errorLCursorPath,
-                _ => errorXlCursorPath
-            };
-
-            _errorNormalCursor = LoadCursorFromFile(path);
-            if (_errorNormalCursor == IntPtr.Zero)
-                throw new InvalidOperationException($"Failed to load error normal cursor: {Marshal.GetLastWin32Error()}");
-
-            _errorBeamCursor = LoadCursorFromFile(path);
-            if (_errorBeamCursor == IntPtr.Zero)
-                throw new InvalidOperationException($"Failed to load error beam cursor: {Marshal.GetLastWin32Error()}");
-
-            if (!SetSystemCursor(_errorNormalCursor, OCR_NORMAL))
-                throw new InvalidOperationException($"Failed to set error normal cursor: {Marshal.GetLastWin32Error()}");
-
-            if (!SetSystemCursor(_errorBeamCursor, OCR_IBEAM))
-                throw new InvalidOperationException($"Failed to set error normal cursor: {Marshal.GetLastWin32Error()}");
+            ExtractCursorResource(tempFilePath);
+            SetCustomCursors(tempFilePath);
         }
-        catch (Exception)
+        finally
         {
-            Restore();
-            throw;
+            File.Delete(tempFilePath);
         }
     }
+
+    private static void ExtractCursorResource(string tempFilePath)
+    {
+        var size = GetCursorSize();
+        var cursorSize = size switch
+        {
+            128 => "128",
+            96 => "96",
+            64 => "64",
+            48 => "48",
+            _ => "32"
+        };
+
+        var cursorPath = $"Working_{cursorSize}x.ani";
+        using var resourceStream = Application.GetResourceStream(new Uri(cursorPath, UriKind.Relative))?.Stream
+            ?? throw new InvalidOperationException($"Could not load cursor resource: {cursorPath}");
+
+        using var fileStream = File.Create(tempFilePath);
+        resourceStream.CopyTo(fileStream);
+    }
+
+    private void SetCustomCursors(string cursorPath)
+    {
+        _customNormalCursor = LoadCursorFromFile(cursorPath);
+        _customBeamCursor = LoadCursorFromFile(cursorPath);
+
+        ThrowIfInvalidPointer(_customNormalCursor, "Failed to load custom normal cursor");
+        ThrowIfInvalidPointer(_customBeamCursor, "Failed to load custom beam cursor");
+
+        if (!SetSystemCursor(_customNormalCursor, OCR_NORMAL))
+            throw new InvalidOperationException($"Failed to set normal cursor: {Marshal.GetLastWin32Error()}");
+
+        if (!SetSystemCursor(_customBeamCursor, OCR_IBEAM))
+            throw new InvalidOperationException($"Failed to set beam cursor: {Marshal.GetLastWin32Error()}");
+    }
+
+    private static string GetErrorCursorPath()
+    {
+        var size = GetCursorSize();
+        return size switch
+        {
+            32 => ErrorCursorPaths[0],
+            48 => ErrorCursorPaths[1],
+            _ => ErrorCursorPaths[2]
+        };
+    }
+
+    private void SetErrorCursors(string path)
+    {
+        _errorNormalCursor = LoadCursorFromFile(path);
+        _errorBeamCursor = LoadCursorFromFile(path);
+
+        ThrowIfInvalidPointer(_errorNormalCursor, "Failed to load error normal cursor");
+        ThrowIfInvalidPointer(_errorBeamCursor, "Failed to load error beam cursor");
+
+        if (!SetSystemCursor(_errorNormalCursor, OCR_NORMAL) || !SetSystemCursor(_errorBeamCursor, OCR_IBEAM))
+            throw new InvalidOperationException($"Failed to set error cursors: {Marshal.GetLastWin32Error()}");
+    }
+
+    private void RestoreOriginalCursors()
+    {
+        if (_originalNormalCursor != IntPtr.Zero)
+        {
+            SetSystemCursor(_originalNormalCursor, OCR_NORMAL);
+            DestroyCursor(_originalNormalCursor);
+            _originalNormalCursor = IntPtr.Zero;
+        }
+
+        if (_originalBeamCursor != IntPtr.Zero)
+        {
+            SetSystemCursor(_originalBeamCursor, OCR_IBEAM);
+            DestroyCursor(_originalBeamCursor);
+            _originalBeamCursor = IntPtr.Zero;
+        }
+    }
+
+    private void CleanupCustomCursors()
+    {
+        SafeDestroyCursor(ref _customNormalCursor);
+        SafeDestroyCursor(ref _customBeamCursor);
+        SafeDestroyCursor(ref _errorNormalCursor);
+        SafeDestroyCursor(ref _errorBeamCursor);
+    }
+
+    private static void SafeDestroyCursor(ref IntPtr cursor)
+    {
+        if (cursor == IntPtr.Zero) return;
+
+        DestroyCursor(cursor);
+        cursor = IntPtr.Zero;
+    }
+
+    private static void UpdateSystemCursors()
+    {
+        // 刷新系统光标
+        SystemParametersInfo(SPI_SETCURSORS, 0, IntPtr.Zero, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+    }
+
+    private static void ThrowIfInvalidPointer(IntPtr ptr, string message)
+    {
+        if (ptr == IntPtr.Zero)
+            throw new InvalidOperationException($"{message}: {Marshal.GetLastWin32Error()}");
+    }
+    #endregion
 }
